@@ -382,6 +382,12 @@ auto t1_kernel_launch_end = std::chrono::steady_clock::now();  // Start timing
     //           << " nanoseconds (" << (time1B * 1000 - time1A) / 1.0e9
     //           << " seconds)\n";
 
+    double timetot = 
+              (std::chrono::duration_cast<std::chrono::microseconds>(t1_end - t2_start)
+              .count());
+    std::cout << "chrono: Overall Operation completed on device1 and device 2 in " << timetot * 1000
+          << " nanoseconds (" << timetot * 1000 / 1.0e9 << " seconds)\n";
+
 
 #endif
   }
