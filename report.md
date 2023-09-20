@@ -68,3 +68,21 @@ We use chrono to count end to end time, shown as below.
 | Splited  | 1.20849 second |
 
 We got 1.59x speedup, which meets our expectation using 2 GPUs. 
+
+# 3. Scale to 4 GPUs
+We try to scale to use 4 GPUs. But it turns out that after splitting the blur kernel to 1/4, it becomes kind of small as well (comparable to Compute PI kernel). 
+
+Therefore, our final strategy is to unevenly split the Task 1 into three tasks. 
+
+Queue 1: 4/9 of Blur; Queue 2: 3/9 of Blur; Queue 3: 2/9 of Blur; Queue 4: Compute PI. 
+
+And we launch these kernels following the above order, so that the kernel launch overhead is compensated by the uneven split. 
+
+The final result is: 
+| Code    | Run Time     |
+| ------- | ---------- |
+| Baseline | 1.91719 second |
+| 2GPU  | 1.20849 second |
+| 4GPU  | 0.893097 second |
+
+We got 2.15x speedup over the baseline. 
