@@ -1,6 +1,6 @@
 # SYCL-Practice
 
-by Jiajie Li, Yifan Li
+by Jiajie Li (jl4257), Yifan Li (yl3722)
 
 ## 1. Accurate Timing Measurement: Profiling vs. Chrono
 
