@@ -2,17 +2,17 @@
 
 by Jiajie Li, Yifan Li
 
-# 1. Accurate Timing Measurement: Profiling vs. Chrono
+## 1. Accurate Timing Measurement: Profiling vs. Chrono
 
 - The original codebase doesn’t put the timer in a very accurate way, e.g. the start timer of device 1 is put before submitting the task2 to Queue2.
     - The code is like: Timer t1 → Submit Task 2 to Queue2 → Parameter setting for Task 1 → Submit Task 1 to Queue1 → Q1.wait() and measurement → Q2.wait() and measurement
 - The start timer t1 should be placed after submitting task 2. In our experiments, it leads to much measurement difference. Therefore, our first step is to check the timing measurement separately for these two tasks
 
-## Accurate timing measurement
+### Accurate timing measurement
 - Seen in `edge_test_timing.cpp`
 - To use chrono, we have: Timer t_start → Submit Task to Queue → Q.wait() → Timer t_end → Measurement
 
-### Task 1: Blur
+#### Task 1: Blur
 | inImgHeight | inImgWidth | FilterWidth | Profiling | Chrono |
 | --- | --- | --- | --- | --- |
 | 256 | 512 | 11 | 3.29504e+06 | 1.40129e+08 |
@@ -27,18 +27,52 @@ by Jiajie Li, Yifan Li
 - Considering the algorithm’s complexity is (inImgHeight * inImgWidth * FilterWidth^2), it seems *Profiling* scales well on the kernel computation time. (It's basically x4 with FilterWidth x2; x2 with inImgHeight x2)
 - Chrono time includes the other overhead, including the kernel launch overhead.
 
-### Task 2: Compute Pi
+#### Task 2: Compute Pi
 
 | Profiling | Chrono |
 | --- | --- |
 | 1.29335e+08 | 2.83199e+08 |
 
-## New Baseline
+### New Baseline
 In the original setting for a 512x512 figure with FilterWidth=11, Blur kernel does not take more time than Compute_Pi. 
 
 Therefore, we set a new baseline with a larger figure with 2048x2048, and FilterWidth=44. The following speedup is compared to this baseline. 
 
 The 2048x2048 figure is `images-2048/goldfish_2048.png`, which is also a goldfish!
 
-# 2. Split the workload of Task 1
+## 2. Split the workload of Task 1
 
+We split the task of picture blurring into two seperate tasks, and run the tasks on both devices.
+
+### Spliting Strategy
+
+In the given data structure for storing pictures, the channels are stored together using a process called "interleaving", which means that pixel data for the same location, even though belonging to different channel, are stored together. Therefore, it's not easy to split the channels into different tasks. We take a different approach by cutting the picture vertically into two parts and assigning one part for each device.
+
+This strategy is implemented by adjusting the `inImgHeight` property. We use two variables, namely `inImgHeight_a` and `inImgHeight_b` to indicate the height of picture each device is responsible for. In current implenmation, these two variables share the same value, which may seem redundant. However, using two instead of one variable will offer us the flexibility to split the task unevenly, which may be useful in future cases. Corresponding vars, such as `ndRange` and `globalRange` are adjusted correspondingly. 
+
+It's worth mentioning that both devices need to read some extra pixels to blur the picture correctly. That is, to blur the pixels near the separator correctly, both devices need to have some information of the pixels on the other side of the separator. This can be done implicitly as we're storing the two parts of the picture together, so both parts are accessible to both devices. When calculating the starting point for the `inBuffer` of the second device, we should take this into account, and the correct value shall be `inImage.data() + inImgHeight_a * channels * (inImgWidth + halo * 2)`.
+
+### Code Structure
+
+Since we want to use `chrono` to measure the performance of the kernels, it's difficult to overlap the execution of two different kernels, as launching a kernel may cause extra CPU overhead and interfere with the timing results. Our code follow the following procedure:
+
+Timer t1_start → Submit Task2 to Queue2 → Q2.wait() → Timer t2_end → Measurement 
+
+→ Timer t1_start → Submit Task1 to Queue1 & Queue2 → Q1.wait() & Q2.wait() → Timer t1_end → Measurement
+
+Though these two tasks do not overlap, we're still getting basically the same results. Both devices are fully utilized for executing Task1.
+
+### Performance Measurement
+
+We're using a larger figure with 2048x2048, and FilterWidth=44 for picture blurring, as stated above. 
+
+Time for Task 1 is
+
+| Code    | Profiling                | Chrono      |
+| ------- | ------------------------ | ----------- |
+| Naive   | 1.47486e+09              | 1.62091e+09 |
+| Splited | 7.39648e+08 /7.24341e+08 | 9.01956e+08 |
+
+Time for Task 2 is basically the same (1.34936e+08 / 3.29067e+08). 
+
+We're getting the expected acceleration.
